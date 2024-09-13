@@ -17,7 +17,6 @@ package org.pkl.lsp.ast
 
 import java.net.URLEncoder
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import org.eclipse.lsp4j.Location
 import org.pkl.lsp.*
 import org.pkl.lsp.FsFile
@@ -221,34 +220,6 @@ private fun PklType?.isRecursive(seen: MutableSet<PklTypeAlias>, context: PklPro
 val PklNode.isInPklBaseModule: Boolean
   get() = containingFile === project.stdlib.base
 
-interface TypeNameRenderer {
-  fun render(name: PklTypeName, appendable: Appendable)
-
-  fun render(type: Type.Class, appendable: Appendable)
-
-  fun render(type: Type.Alias, appendable: Appendable)
-
-  fun render(type: Type.Module, appendable: Appendable)
-}
-
-object DefaultTypeNameRenderer : TypeNameRenderer {
-  override fun render(name: PklTypeName, appendable: Appendable) {
-    appendable.append(name.simpleTypeName.identifier?.text)
-  }
-
-  override fun render(type: Type.Class, appendable: Appendable) {
-    appendable.append(type.ctx.name)
-  }
-
-  override fun render(type: Type.Alias, appendable: Appendable) {
-    appendable.append(type.ctx.name)
-  }
-
-  override fun render(type: Type.Module, appendable: Appendable) {
-    appendable.append(type.referenceName)
-  }
-}
-
 val PklModuleMember.owner: PklTypeDefOrModule?
   get() = parentOfTypes(PklClass::class, PklModule::class)
 
@@ -286,10 +257,7 @@ fun PklModuleUri.resolveGlob(context: PklProject?): List<PklModule> =
     val futures =
       resolveGlob(text, text, this, context)?.filter { !it.isDirectory }?.map { it.getModule() }
         ?: return@let emptyList<PklModule>()
-    CompletableFuture.allOf(*futures.toTypedArray())
-      .thenApply { futures.map(CompletableFuture<PklModule?>::join) }
-      .join()
-      .filterNotNull()
+    futures.zip().get().filterNotNull()
   } ?: emptyList()
 
 fun PklModuleUri.resolve(context: PklProject?): PklModule? =
@@ -448,3 +416,16 @@ fun PklNode.modificationTracker(): ModificationTracker = containingFile
 
 val PklNode.isInPackage: Boolean
   get() = containingFile.`package` != null
+
+private val quoteCharacters =
+  EnumSet.of(TokenType.SLQuote, TokenType.SLEndQuote, TokenType.MLQuote, TokenType.MLEndQuote)
+
+fun PklStringConstant.contentsSpan(): Span {
+  val characters =
+    terminals
+      .dropWhile { quoteCharacters.contains(it.type) }
+      .dropLastWhile { quoteCharacters.contains(it.type) }
+  val firstSpan = characters.first().span
+  val lastSpan = characters.last().span
+  return Span(firstSpan.beginLine, firstSpan.beginCol, lastSpan.endLine, lastSpan.endCol)
+}

@@ -62,6 +62,13 @@ interface VirtualFile : ModificationTracker {
   var version: Long?
 
   /**
+   * The root file of this VirtualFile's file system.
+   *
+   * May throw [OperationNotSupportedException] if this file cannot be converted to a [Path].
+   */
+  val root: VirtualFile?
+
+  /**
    * The NIO path backing this file.
    *
    * May throw [OperationNotSupportedException] if this file cannot be converted to a [Path].
@@ -108,7 +115,13 @@ sealed class BaseFile : VirtualFile {
       myContents = text
     }
 
+  final override val root: VirtualFile?
+    get() = project.virtualFileManager.get(path.root)
+
   final override fun getModule(): CompletableFuture<PklModule?> {
+    if (isDirectory) {
+      return CompletableFuture.completedFuture(null)
+    }
     return project.cachedValuesManager.getCachedValue("VirtualFile($uri)") {
       CachedValue(CompletableFuture.supplyAsync(::doBuildModule), this)
     }!!

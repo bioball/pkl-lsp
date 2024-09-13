@@ -19,6 +19,8 @@ import java.util.*
 import org.pkl.lsp.PklBaseModule
 import org.pkl.lsp.Project
 import org.pkl.lsp.ast.*
+import org.pkl.lsp.documentation.DefaultTypeNameRenderer
+import org.pkl.lsp.documentation.TypeNameRenderer
 import org.pkl.lsp.packages.dto.PklProject
 import org.pkl.lsp.resolvers.ResolveVisitor
 import org.pkl.lsp.unexpectedType
