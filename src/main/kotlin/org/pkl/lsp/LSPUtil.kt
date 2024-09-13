@@ -130,3 +130,16 @@ val URI.effectiveUri: URI?
       else -> null
     }
   }
+
+val pklCacheDir: Path = Path.of(System.getProperty("user.home")).resolve(".pkl/cache")
+
+fun String.getIndex(position: Position): Int {
+  var currentIndex = 0
+  for ((column, line) in lines().withIndex()) {
+    if (column == position.line) {
+      return currentIndex + position.character
+    }
+    currentIndex += line.length + 1 // + 1 because newline is also a character
+  }
+  throw IllegalArgumentException("Invalid position for contents")
+}

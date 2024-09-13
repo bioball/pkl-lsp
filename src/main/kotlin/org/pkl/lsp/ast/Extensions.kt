@@ -17,6 +17,7 @@ package org.pkl.lsp.ast
 
 import java.net.URLEncoder
 import java.util.*
+import java.util.concurrent.CompletableFuture
 import org.eclipse.lsp4j.Location
 import org.pkl.lsp.*
 import org.pkl.lsp.FsFile
@@ -108,12 +109,8 @@ fun PklNode.isAncestor(of: PklNode): Boolean {
   return false
 }
 
-fun PklNode.isInStdlib(): Boolean {
-  return this.enclosingModule?.let { mod ->
-    val uri = mod.uri
-    uri.scheme == "pkl" && uri.authority == "stdlib"
-  } ?: false
-}
+val PklNode.isInStdlib
+  get(): Boolean = this.containingFile is StdlibFile
 
 fun PklClass.isSubclassOf(other: PklClass, context: PklProject?): Boolean {
   // optimization
@@ -222,7 +219,7 @@ private fun PklType?.isRecursive(seen: MutableSet<PklTypeAlias>, context: PklPro
   }
 
 val PklNode.isInPklBaseModule: Boolean
-  get() = enclosingModule?.let { it == it.project.stdlib.baseModule() } == true
+  get() = containingFile === project.stdlib.base
 
 interface TypeNameRenderer {
   fun render(name: PklTypeName, appendable: Appendable)
@@ -286,7 +283,13 @@ fun PklImportBase.resolveModules(context: PklProject?): List<PklModule> =
 
 fun PklModuleUri.resolveGlob(context: PklProject?): List<PklModule> =
   this.stringConstant.escapedText()?.let { text ->
-    resolveGlob(text, text, this, context)?.filter { !it.isDirectory }?.mapNotNull { it.toModule() }
+    val futures =
+      resolveGlob(text, text, this, context)?.filter { !it.isDirectory }?.map { it.getModule() }
+        ?: return@let emptyList<PklModule>()
+    CompletableFuture.allOf(*futures.toTypedArray())
+      .thenApply { futures.map(CompletableFuture<PklModule?>::join) }
+      .join()
+      .filterNotNull()
   } ?: emptyList()
 
 fun PklModuleUri.resolve(context: PklProject?): PklModule? =
