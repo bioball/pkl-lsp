@@ -13,12 +13,16 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import de.undercouch.gradle.tasks.download.Download
+import de.undercouch.gradle.tasks.download.Verify
 import java.nio.charset.StandardCharsets
 import java.util.*
 import kotlin.io.path.absolutePathString
 import org.apache.tools.ant.filters.ReplaceTokens
 import org.gradle.internal.extensions.stdlib.capitalized
+import org.gradle.internal.jvm.inspection.JvmVendor
 import org.gradle.internal.os.OperatingSystem
+import org.gradle.jvm.toolchain.internal.DefaultToolchainJavaLauncher
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -32,11 +36,14 @@ plugins {
   alias(libs.plugins.shadow)
   alias(libs.plugins.spotless)
   alias(libs.plugins.nexusPublish)
+  alias(libs.plugins.graalVmNativeImage)
 }
 
 val buildInfo = project.extensions.getByType<BuildInfo>()
 
 repositories { mavenCentral() }
+
+val nativeImageMetadataDir = layout.buildDirectory.dir("native-image-metadata")
 
 java {
   sourceCompatibility = JavaVersion.toVersion(buildInfo.jdkTargetVersion)
@@ -102,7 +109,9 @@ tasks.jar {
   }
 }
 
-application { mainClass = "org.pkl.lsp.cli.Main" }
+application {
+  mainClass = "org.pkl.lsp.cli.Main"
+}
 
 tasks.test {
   dependsOn(configurePklCliExecutable)
@@ -205,6 +214,14 @@ val oses by lazy {
   val linux = OperatingSystem.forName("linux")
   val windows = OperatingSystem.forName("windows")
   listOf(macos, linux, windows)
+}
+
+val buildReflectionMetadata by tasks.registering(JavaExec::class) {
+  javaLauncher = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(25)
+    vendor = JvmVendorSpec.GRAAL_VM
+  }
+
 }
 
 val architectures = listOf(Architecture.Amd64, Architecture.Aarch64)
@@ -349,6 +366,86 @@ tasks.processResources {
         )
     )
   }
+}
+
+val makeNativeImageMetadata by tasks.registering(JavaExec::class) {
+  javaLauncher = javaToolchains.launcherFor {
+    languageVersion = JavaLanguageVersion.of(25)
+    vendor = JvmVendorSpec.GRAAL_VM
+  }
+  mainClass = application.mainClass
+  classpath = sourceSets.main.get().runtimeClasspath
+  systemProperty("MAKE_NATIVE_IMAGE_METADATA", "true")
+  val outputDir = nativeImageMetadataDir.map { it.dir("META-INF/native-image/org.pkl/pkl-lsp/") }
+  outputs.dir(outputDir)
+  jvmArgumentProviders.add {
+    listOf(
+      "-agentlib:native-image-agent=config-output-dir=${outputDir.get()}"
+    )
+  }
+}
+
+// tries to minimize chance of corruption by download-to-temp-file-and-move
+val downloadGraalVmAarch64 by
+tasks.registering(Download::class) { configureDownloadGraalVm(buildInfo.graalVmAarch64) }
+
+val downloadGraalVmAmd64 by
+tasks.registering(Download::class) { configureDownloadGraalVm(buildInfo.graalVmAmd64) }
+
+fun Download.configureDownloadGraalVm(graalvm: BuildInfo.GraalVm) {
+  onlyIf { !graalvm.installDir.exists() }
+  doLast { println("Downloaded GraalVm to ${graalvm.downloadFile}") }
+
+  src(graalvm.downloadUrl)
+  dest(graalvm.downloadFile)
+  overwrite(false)
+  tempAndMove(true)
+}
+
+val verifyGraalVmAarch64 by
+tasks.registering(Verify::class) {
+  configureVerifyGraalVm(buildInfo.graalVmAarch64)
+  dependsOn(downloadGraalVmAarch64)
+}
+
+val verifyGraalVmAmd64 by
+tasks.registering(Verify::class) {
+  configureVerifyGraalVm(buildInfo.graalVmAmd64)
+  dependsOn(downloadGraalVmAmd64)
+}
+
+fun Verify.configureVerifyGraalVm(graalvm: BuildInfo.GraalVm) {
+  onlyIf { !graalvm.installDir.exists() }
+
+  src(graalvm.downloadFile)
+  checksum(
+    buildInfo.libs.findVersion("graalVmSha256-${graalvm.osName}-${graalvm.arch}").get().toString()
+  )
+  algorithm("SHA-256")
+}
+
+@Suppress("unused")
+val installGraalVmAarch64 by
+tasks.registering(InstallGraalVm::class) {
+  dependsOn(verifyGraalVmAarch64)
+  graalVm = buildInfo.graalVmAarch64
+}
+
+@Suppress("unused")
+val installGraalVmAmd64 by
+tasks.registering(InstallGraalVm::class) {
+  dependsOn(verifyGraalVmAmd64)
+  graalVm = buildInfo.graalVmAmd64
+}
+
+val buildNativeMacosAarch64 by tasks.registering(NativeImageBuild::class) {
+  enabled = buildInfo.os.isMacOsX
+  mainClass = application.mainClass
+  dependsOn(makeNativeImageMetadata)
+  classpath.from(sourceSets.main.map { it.runtimeClasspath }, nativeImageMetadataDir)
+  imageName = "pkl-lsp-macos-aarch64"
+  arch = Architecture.Aarch64
+  dependsOn(downloadGraalVmAarch64)
 }
 
 // verify the built distribution in different OSes.

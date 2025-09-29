@@ -20,6 +20,8 @@ import org.gradle.api.artifacts.VersionCatalog
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.kotlin.dsl.getByType
 import org.gradle.internal.os.OperatingSystem
+import org.gradle.kotlin.dsl.provideDelegate
+import java.io.File
 import java.nio.file.Path
 
 // `buildInfo` in main build scripts
@@ -34,7 +36,7 @@ open class BuildInfo(val project: Project) {
   }
 
   /** The JDK version used to build the language server. */
-  val jdkVersion: Int = 22
+  val jdkVersion: Int = 25
 
   /** The minimum JDK version required to run the language server. */
   val jdkTargetVersion: Int = 22
@@ -81,12 +83,57 @@ open class BuildInfo(val project: Project) {
 
   val zig: Zig = Zig()
 
+  val graalVmAarch64: GraalVm = GraalVm("aarch64")
+
+  val graalVmAmd64: GraalVm = GraalVm("x64")
+
   inner class Zig {
     val version: String get() = libs.findVersion("zig").get().toString()
 
     val installDir: Path get() = project.projectDir.toPath().resolve(".gradle/zig/zig-${os.canonicalName}-${arch.name}-$version")
 
     val executable: Path get() = installDir.resolve(if (os.isWindows) "zig.exe" else "zig")
+  }
+
+  inner class GraalVm(val arch: String) {
+    val homeDir: String by lazy {
+      System.getenv("GRAALVM_HOME") ?: "${System.getProperty("user.home")}/.graalvm"
+    }
+
+    val version: String by lazy { libs.findVersion("graalVm").get().toString() }
+
+    val graalVmJdkVersion: String by lazy { libs.findVersion("graalVmJdkVersion").get().toString() }
+
+    val osName: String by lazy {
+      when {
+        os.isMacOsX -> "macos"
+        os.isLinux -> "linux"
+        os.isWindows -> "windows"
+        else -> throw RuntimeException("${os.familyName} is not supported.")
+      }
+    }
+
+    val baseName: String by lazy {
+      "graalvm-jdk-${jdkMajor}_${osName}-${arch}_bin"
+    }
+
+    private val jdkMajor = graalVmJdkVersion.takeWhile { it != '.' }
+
+    val downloadUrl: String by lazy {
+      val extension = if (os.isWindows) "zip" else "tar.gz"
+      "https://download.oracle.com/graalvm/$jdkMajor/latest/$baseName.$extension"
+    }
+
+    val downloadFile: File by lazy {
+      val extension = if (os.isWindows) "zip" else "tar.gz"
+      File(homeDir, "${baseName}.$extension")
+    }
+
+    val installDir: File by lazy { File(homeDir, baseName) }
+
+    val baseDir: String by lazy {
+      if (os.isMacOsX) "$installDir/Contents/Home" else installDir.toString()
+    }
   }
 
   init {

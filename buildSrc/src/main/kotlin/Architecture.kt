@@ -15,12 +15,20 @@
  */
 @file:Suppress("MemberVisibilityCanBePrivate")
 
+import java.io.Serial
+import java.io.Serializable
+
+
 sealed class Architecture(
   /** The arch name that we use in our own distributions. */
   val name: String,
   /** The arch name used by the zig C compiler. */
   val cName: String,
-) {
+) : Serializable {
+  companion object {
+    @Serial
+    val serialVersionUID = 1L
+  }
   object Amd64 : Architecture("amd64", "x86_64")
   object Aarch64 : Architecture("aarch64", "aarch64")
 }

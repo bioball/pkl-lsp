@@ -18,7 +18,15 @@
 package org.pkl.lsp.cli
 
 import com.github.ajalt.clikt.core.main
+import io.github.treesitter.jtreesitter.Language
+import io.github.treesitter.jtreesitter.Parser
+import org.pkl.lsp.treesitter.TreeSitterPkl
 
 internal fun main(args: Array<String>) {
+  if (java.lang.Boolean.getBoolean("MAKE_NATIVE_IMAGE_METADATA")) {
+    Parser(Language(TreeSitterPkl.language())).parse("foo = 1")
+    LspCommand()
+    return
+  }
   LspCommand().main(args)
 }
