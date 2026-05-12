@@ -1,5 +1,5 @@
 /*
- * Copyright © 2025 Apple Inc. and the Pkl project authors. All rights reserved.
+ * Copyright © 2025-2026 Apple Inc. and the Pkl project authors. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -248,7 +248,7 @@ class AccessExprAnalyzer(project: Project) : Analyzer(project) {
     // scenario 1: this is a reference from a const property, and can only reference other const
     // properties
     if (isConst) {
-      val name = node.identifier!!.text
+      val name = node.identifierName!!
       val action = if (target is PklProperty) "reference property" else "call method"
       val message = ErrorMessages.create("cannotAccessFromConst", action, name)
       holder.addError(node, message, span = node.identifier!!.span)

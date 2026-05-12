@@ -1,5 +1,5 @@
 /*
- * Copyright © 2024-2025 Apple Inc. and the Pkl project authors. All rights reserved.
+ * Copyright © 2024-2026 Apple Inc. and the Pkl project authors. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -217,5 +217,51 @@ class GoToDefinitionTest : LspTestBase() {
     assertThat(resolved).hasSize(1)
     assertThat(resolved[0]).isInstanceOf(PklClassProperty::class.java)
     assertThat((resolved[0] as PklClassProperty).name).isEqualTo("name")
+  }
+
+  @Test
+  fun `resolve backtick names -- module keyword`() {
+    val modulePklFile = createPklFile("module.pkl", "")
+    createPklFile(
+      """
+      import "module.pkl"
+      
+      res = `module`<caret>
+    """
+        .trimIndent()
+    )
+    val resolved = goToDefinition()
+    assertThat(resolved).hasSize(1)
+    assertThat(resolved[0].containingFile.path).isEqualTo(modulePklFile)
+  }
+
+  @Test
+  fun `resolve backtick names -- quoted identifiers are same as unquoted`() {
+    createPklFile(
+      """
+      foo = 1
+      
+      res = `foo`<caret>
+    """
+        .trimIndent()
+    )
+
+    val resolved = goToDefinition()
+    assertThat(resolved.first()).isInstanceOf(PklClassProperty::class.java)
+  }
+
+  @Test
+  fun `resolve backtick names -- quoted identifiers are same as unquoted 2`() {
+    createPklFile(
+      """
+      `foo` = 1
+      
+      res = foo<caret>
+    """
+        .trimIndent()
+    )
+
+    val resolved = goToDefinition()
+    assertThat(resolved.first()).isInstanceOf(PklClassProperty::class.java)
   }
 }
