@@ -59,7 +59,8 @@ fun PklNode?.computeResolvedImportType(
             type.toType(base, bindings, context, preserveUnboundTypeVars, receiverType)
           else ->
             when {
-              canInferExprBody && isLocalOrConstOrFixed ->
+              // amending properties (`fixed foo { ... }`) have no expr; resolve via the parent type
+              canInferExprBody && isLocalOrConstOrFixed && expr != null ->
                 expr.computeExprType(base, bindings, context)
               isDefinition(context) -> Type.Unknown
               else -> {

@@ -55,7 +55,9 @@ class PklClassPropertyImpl(
   override fun isDefinition(context: PklProject?): Boolean =
     when {
       type != null -> true
-      isLocalOrConstOrFixed -> true
+      // `fixed`/`const` properties can amend a parent's property; they are definitions only if the
+      // parent doesn't declare them (checked below).
+      isLocal -> true
       else -> {
         when (val owner = this.parentOfTypes(PklModule::class, PklClass::class)) {
           is PklModule -> {
