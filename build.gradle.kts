@@ -40,7 +40,18 @@ plugins {
 
 val buildInfo = project.extensions.getByType<BuildInfo>()
 
-repositories { mavenCentral() }
+val treeSitterTypeGen = configurations.create("treeSitterTypeGen")
+
+repositories {
+  mavenCentral()
+  ivy {
+    url = uri("https://github.com")
+    patternLayout {
+      artifact("[organisation]/[module]/releases/download/[revision]/[artifact].[ext]")
+    }
+    metadataSources { artifact() }
+  }
+}
 
 java {
   sourceCompatibility = JavaVersion.toVersion(buildInfo.jdkTargetVersion)
@@ -124,6 +135,15 @@ dependencies {
     "org.pkl-lang:pkl-cli-${buildInfo.os.simpleName}-${buildInfo.arch.simpleName}:${libs.versions.pkl.get()}"
   )
   nativeImageClasspath(files(reachabilityMetadataDir))
+
+  treeSitterTypeGen("Marcono1234:jtreesitter-type-gen:v0.1.0") {
+    artifact {
+      name = "jtreesitter-type-gen-0.1.0"
+      type = "jar"
+      extension = "jar"
+    }
+  }
+
   add("reflectionMetadataGeneratorImplementation", libs.classgraph)
   add("commonsApi", libs.lsp4j)
 
@@ -232,6 +252,31 @@ val generateLsp4jReflectionMetadata =
       }
     )
   }
+
+val generatedTreeSitterJavaClassesDir =
+  layout.buildDirectory.dir("generated/tree-sitter-java-bindings")
+
+val generateTreeSitterJavaClasses =
+  tasks.register<JavaExec>("generateTreeSitterJavaClasses") {
+    doFirst { generatedTreeSitterJavaClassesDir.get().asFile.deleteRecursively() }
+    dependsOn(setupTreeSitterPklRepo)
+    classpath = treeSitterTypeGen
+    outputs.dir(generatedTreeSitterJavaClassesDir)
+    argumentProviders.add(
+      CommandLineArgumentProvider {
+        listOf(
+          "--node-types=${treeSitterPklRepoDir.get().asFile.absolutePath}/src/node-types.json",
+          "--package=org.pkl.lsp.treesitter",
+          "--output-dir=${generatedTreeSitterJavaClassesDir.get().asFile.absolutePath}",
+          //
+          // "--language-provider=org.pkl.lsp.treesitter.TreeSitterPkl.Companion#createLanguage",
+          "--nullable-annotation=org.jspecify.annotations.Nullable",
+        )
+      }
+    )
+  }
+
+tasks.compileJava { dependsOn(generateTreeSitterJavaClasses) }
 
 /**
  * Generating traceability metadata is a two-step process:
@@ -624,7 +669,15 @@ tasks.testNativeLinuxAarch64 { dependsOn(testNativeExecutableLinuxAarch64) }
 
 tasks.testNativeWindowsAmd64 { dependsOn(testNativeExecutableWindows) }
 
-sourceSets { main { resources { srcDirs(nativeLibDir) } } }
+sourceSets {
+  main {
+    java.srcDir(generatedTreeSitterJavaClassesDir)
+    kotlin.srcDir(generatedTreeSitterJavaClassesDir)
+    resources.srcDir(nativeLibDir)
+  }
+}
+
+idea { module { generatedSourceDirs.add(generatedTreeSitterJavaClassesDir.get().asFile) } }
 
 private val licenseHeader =
   """
